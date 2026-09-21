@@ -1,66 +1,65 @@
-"""Executes app.py top-to-bottom with stubbed streamlit/plotly against sample CSVs."""
-import sys, types, pathlib, tempfile, datetime as dt
-from unittest.mock import MagicMock
+"""End-to-end: real fetch()/requests against a local HTTP server that mimics comex.mse.mn."""
+import sys, threading, tempfile, pathlib, http.server, socketserver
 ROOT = pathlib.Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT/"tests"))
 import scraper, pandas as pd
 from test_parsers import TRADES_HTML, NOTICE_HTML
 from test_contracts import D0911, D0910, html_table
 
+PAGES = {"/show-trades": TRADES_HTML, "/home": NOTICE_HTML,
+         "/show_trading_infos/2026-09-11": html_table(D0911), "/show_trading_infos/2026-09-10": html_table(D0910)}
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path in PAGES:
+            body = PAGES[path].encode("utf-8"); self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=UTF-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        else:
+            self.send_response(404); self.end_headers()
+    def log_message(self, *a): pass
+
+srv = socketserver.TCPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
 tmp = pathlib.Path(tempfile.mkdtemp())
-scraper.DATA_DIR, scraper.TRADES_CSV, scraper.NOTICES_CSV = tmp, tmp/"trades.csv", tmp/"notices.csv"
-scraper._save(pd.DataFrame(scraper.parse_trades(TRADES_HTML)), scraper.TRADES_CSV, scraper.TRADE_COLUMNS, ["trade_time"])
-scraper._save(pd.DataFrame(scraper.parse_notices(NOTICE_HTML)), scraper.NOTICES_CSV, scraper.NOTICE_COLUMNS, ["date"])
-scraper.CONTRACTS_CSV = tmp/"contracts.csv"
-rows = scraper.parse_contracts(html_table(D0911), "2026-09-11") + scraper.parse_contracts(html_table(D0910), "2026-09-10")
-scraper._save(pd.DataFrame(rows), scraper.CONTRACTS_CSV, scraper.CONTRACT_COLUMNS, ["date"])
-scraper.update_all = lambda **k: {"new_trades": 0, "notices": 0}   # no network
+scraper.BASE = f"http://127.0.0.1:{srv.server_address[1]}"; scraper.REQUEST_DELAY = 0
+scraper.DATA_DIR = tmp
+scraper.TRADES_CSV, scraper.NOTICES_CSV, scraper.CONTRACTS_CSV, scraper.CONTRACTS_GONE = tmp/"trades.csv", tmp/"notices.csv", tmp/"contracts.csv", tmp/"gone.txt"
 
-st = MagicMock()
-st.cache_resource = lambda **kw: (lambda f: f)
-class _Cache:
-    def __call__(self, *a, **kw): return (lambda f: f) if not (a and callable(a[0])) else a[0]
-    clear = staticmethod(lambda: None)
-st.cache_data = _Cache()
-st.columns.side_effect = lambda spec, **kw: [MagicMock() for _ in range(spec if isinstance(spec, int) else len(spec))]
-st.tabs.side_effect = lambda names: [MagicMock() for _ in names]
-st.date_input.side_effect = lambda *a, **kw: a[1]
-st.multiselect.side_effect = lambda label, options, default=None, **kw: default if default is not None else options
-import os
-CHOICE = {"Period": os.environ.get("SMOKE_PERIOD", "Quarter"), "Show": os.environ.get("SMOKE_METRIC", "Value"),
-          "Split by": os.environ.get("SMOKE_SPLIT", "None")}
-def _radio(label, options, index=0, **kw): return CHOICE.get(label, list(options)[index])
-def _select(label, options, index=0, **kw):
-    options = list(options)
-    return CHOICE.get(label, options[index] if options else None)
-st.selectbox.side_effect = _select
-st.radio.side_effect = _radio
-st.button.return_value = False; st.checkbox.return_value = True
-st.stop.side_effect = SystemExit
-sys.modules["streamlit"] = st
-sys.modules["plotly"] = MagicMock(); sys.modules["plotly.express"] = MagicMock()
-sys.modules["pandas.io.formats.style"] = sys.modules.get("pandas.io.formats.style", MagicMock())
+def reset():
+    for f in tmp.glob("*"): f.unlink()
 
-# column widgets return mocks: k1..k5 metrics + c1/c2 in trend tab
-src = (ROOT/"app.py").read_text()
-# c2.multiselect must behave like the real thing: patch by giving column mocks the same stubs
-def mk(): 
-    m = MagicMock(); m.selectbox.side_effect = st.selectbox.side_effect; m.radio.side_effect = st.radio.side_effect; m.multiselect.side_effect = st.multiselect.side_effect; return m
-st.columns.side_effect = lambda spec, **kw: [mk() for _ in range(spec if isinstance(spec, int) else len(spec))]
-exec(compile(src, "app.py", "exec"), {"__name__": "__main__"})
-calls = {n: getattr(st, n).call_count for n in ("dataframe", "plotly_chart", "metric", "download_button")}
-print("app executed OK:", calls)
-print("first snapshot table columns rendered:", list(st.dataframe.call_args_list[0][0][0].columns))
+def run(full):
+    logs = []
+    res = scraper.update_all(full=full, log=logs.append)
+    return res, logs
 
-pd.set_option("display.width", 250); pd.set_option("display.max_columns", 30)
-snap = st.dataframe.call_args_list[0][0][0]
-print(snap[["Company","Product","Currency","Auctions sold","Lots sold","Tonnes sold","Avg lot size (t)","Contract value","Avg bidders"]].to_string(index=False))
-print()
-for name, call in zip(("by commodity", "by company", "contracts"), st.dataframe.call_args_list[1:4]):
-    print("--", name); print(call[0][0].drop(columns=[c for c in call[0][0].columns if c in ("last_auction","commodities","address","quality")], errors="ignore").head(8).to_string(index=False))
-print("\nmetrics:", [(c[0][0], c[0][1]) for m in [] for c in m])
+# 1) full crawl through update_all()  (this is what `python scraper.py --full` does)
+res, logs = run(full=True)
+c = scraper.load_contracts()
+assert res["errors"] == [], res["errors"]
+assert len(c) == 8 and sorted(set(c["date"])) == ["2026-09-10", "2026-09-11"], (res, len(c))
+assert c["total_value"].sum() == 16384000 + 19558400*2 + 18496000 + 15803377 + 4480000 + 24678400 + 438900
+tt = c[c["company_en"] == "Tavan Tolgoi JSC"]
+assert len(tt) == 5 and tt["quantity_t"].sum() == 102400*3 + 64000 + 204800
+print("full crawl OK:", res["contracts"], "contracts parsed; Tavan Tolgoi JSC tonnes =", tt["quantity_t"].sum())
 
-for call in st.dataframe.call_args_list:
-    d = call[0][0]
-    if hasattr(d, "columns") and "Period" in d.columns:
-        pd.set_option("display.width", 220)
-        print(d.to_string(index=False))
+# 2) what the Streamlit app does: trades.csv already exists, contracts.csv does not -> incremental refresh
+scraper.CONTRACTS_CSV.unlink(); scraper.CONTRACTS_GONE.unlink(missing_ok=True)
+res, logs = run(full=False)
+assert res["errors"] == [] and len(scraper.load_contracts()) == 8, (res, logs[-4:])
+print("incremental refresh with no contracts.csv OK")
+
+# 3) main() exit code + summary line
+import io, contextlib
+scraper.CONTRACTS_CSV.unlink()
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    sys.argv = ["scraper.py"]; rc = scraper.main()
+assert rc == 0 and "8 contracts" in buf.getvalue(), buf.getvalue()[-200:]
+print("main() OK:", buf.getvalue().strip().splitlines()[-1])
+
+# 4) a failing contracts step must be reported, not swallowed
+orig = scraper.update_contracts
+scraper.update_contracts = lambda **k: (_ for _ in ()).throw(RuntimeError("boom"))
+res, _ = run(full=False)
+assert res["errors"] and "boom" in res["errors"][0]
+scraper.update_contracts = orig
+print("errors are surfaced OK")

@@ -26,14 +26,6 @@ jobs:
 
       - run: pip install requests beautifulsoup4 pandas
 
-      - name: Run parser tests
-        run: |
-          python tests/test_no_undefined_names.py
-          python tests/test_parsers.py
-          python tests/test_contracts.py
-          python tests/test_analytics.py
-          python tests/test_e2e_local_server.py
-
       - name: Scrape (full crawl if trades or contracts are missing, otherwise incremental)
         run: |
           if [ -f data/trades.csv ] && [ -f data/contracts.csv ]; then python scraper.py; else python scraper.py --full; fi

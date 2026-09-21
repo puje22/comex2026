@@ -1,65 +1,66 @@
-"""End-to-end: real fetch()/requests against a local HTTP server that mimics comex.mse.mn."""
-import sys, threading, tempfile, pathlib, http.server, socketserver
-ROOT = pathlib.Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT/"tests"))
-import scraper, pandas as pd
-from test_parsers import TRADES_HTML, NOTICE_HTML
-from test_contracts import D0911, D0910, html_table
+"""Period aggregation (year / half-year / quarter / month) with hand-checkable numbers."""
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import pandas as pd, numpy as np
+import analytics as A
 
-PAGES = {"/show-trades": TRADES_HTML, "/home": NOTICE_HTML,
-         "/show_trading_infos/2026-09-11": html_table(D0911), "/show_trading_infos/2026-09-10": html_table(D0910)}
-class H(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        path = self.path.split("?")[0]
-        if path in PAGES:
-            body = PAGES[path].encode("utf-8"); self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=UTF-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
-        else:
-            self.send_response(404); self.end_headers()
-    def log_message(self, *a): pass
+def row(date, company, grade, ccy, tonnes, price, code):
+    return dict(date=date, company_en=company, commodity="Coal", grade=grade, currency=ccy, quantity_t=tonnes,
+                total_value=tonnes * price, lots=1, product_code=code, deal_price=price)
 
-srv = socketserver.TCPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
-tmp = pathlib.Path(tempfile.mkdtemp())
-scraper.BASE = f"http://127.0.0.1:{srv.server_address[1]}"; scraper.REQUEST_DELAY = 0
-scraper.DATA_DIR = tmp
-scraper.TRADES_CSV, scraper.NOTICES_CSV, scraper.CONTRACTS_CSV, scraper.CONTRACTS_GONE = tmp/"trades.csv", tmp/"notices.csv", tmp/"contracts.csv", tmp/"gone.txt"
+C = pd.DataFrame([
+    row("2025-02-10", "A", "g1", "USD", 100, 50, "1"),
+    row("2025-05-10", "A", "g1", "USD", 200, 60, "2"),
+    row("2025-08-10", "B", "g1", "USD", 300, 70, "3"),
+    row("2025-11-10", "B", "g2", "CNY", 400, 500, "4"),
+    row("2026-01-05", "A", "g1", "USD", 100, 80, "5"),
+    row("2026-08-20", "A", "g1", "USD", 200, 90, "6"),
+    row("2026-09-11", "B", "g1", "USD", 100, 100, "7"),
+])
+AS_OF = "2026-09-11"
 
-def reset():
-    for f in tmp.glob("*"): f.unlink()
+def get(agg, label, group="All"):
+    r = agg[(agg.period == label) & (agg.group == group)]
+    assert len(r) == 1, (label, group, agg)
+    return r.iloc[0]
 
-def run(full):
-    logs = []
-    res = scraper.update_all(full=full, log=logs.append)
-    return res, logs
+# ---- year
+y_usd = A.sales_by_period(C, "Year", currency="USD", as_of=AS_OF)
+r = get(y_usd, "2025"); assert (r.tonnes, r.value, r.contracts) == (600, 100*50 + 200*60 + 300*70, 3) and not r.partial
+assert abs(r.avg_price - 38000/600) < 1e-9
+r = get(y_usd, "2026"); assert r.partial and r.tonnes == 400
+# CNY contract must not leak into USD figures, but tonnes over ALL currencies include it
+y_all = A.sales_by_period(C, "Year", currency=None, as_of=AS_OF)
+assert get(y_all, "2025").tonnes == 1000
 
-# 1) full crawl through update_all()  (this is what `python scraper.py --full` does)
-res, logs = run(full=True)
-c = scraper.load_contracts()
-assert res["errors"] == [], res["errors"]
-assert len(c) == 8 and sorted(set(c["date"])) == ["2026-09-10", "2026-09-11"], (res, len(c))
-assert c["total_value"].sum() == 16384000 + 19558400*2 + 18496000 + 15803377 + 4480000 + 24678400 + 438900
-tt = c[c["company_en"] == "Tavan Tolgoi JSC"]
-assert len(tt) == 5 and tt["quantity_t"].sum() == 102400*3 + 64000 + 204800
-print("full crawl OK:", res["contracts"], "contracts parsed; Tavan Tolgoi JSC tonnes =", tt["quantity_t"].sum())
+# ---- half-year and quarter boundaries
+h = A.sales_by_period(C, "Half-year", currency="USD", as_of=AS_OF)
+assert list(h.period) == ["2025 H1", "2025 H2", "2026 H1", "2026 H2"], list(h.period)
+assert get(h, "2025 H1").value == 5000 + 12000 and get(h, "2026 H2").partial and not get(h, "2026 H1").partial
+q = A.sales_by_period(C, "Quarter", currency="USD", as_of=AS_OF)
+assert list(q.period) == ["2025 Q1", "2025 Q2", "2025 Q3", "2026 Q1", "2026 Q3"]
+r = get(q, "2026 Q3"); assert r.partial and r.tonnes == 300 and r.value == 200*90 + 100*100
+# volume-weighted, NOT the simple mean of the two prices (95)
+assert abs(r.avg_price - 28000/300) < 1e-9 and abs(r.avg_price - 95) > 1
+assert not get(q, "2025 Q3").partial
 
-# 2) what the Streamlit app does: trades.csv already exists, contracts.csv does not -> incremental refresh
-scraper.CONTRACTS_CSV.unlink(); scraper.CONTRACTS_GONE.unlink(missing_ok=True)
-res, logs = run(full=False)
-assert res["errors"] == [] and len(scraper.load_contracts()) == 8, (res, logs[-4:])
-print("incremental refresh with no contracts.csv OK")
+# ---- month + splits
+m = A.sales_by_period(C, "Month", currency="USD", as_of=AS_OF)
+assert "2026-09" in set(m.period) and get(m, "2026-09").partial and not get(m, "2026-08").partial
+s = A.sales_by_period(C, "Year", split="Company", currency="USD", as_of=AS_OF)
+assert get(s, "2025", "A").value == 5000 + 12000 and get(s, "2025", "B").value == 21000
+p = A.sales_by_period(C, "Year", split="Product", currency=None, as_of=AS_OF)
+assert get(p, "2025", "g2").tonnes == 400
 
-# 3) main() exit code + summary line
-import io, contextlib
-scraper.CONTRACTS_CSV.unlink()
-buf = io.StringIO()
-with contextlib.redirect_stdout(buf):
-    sys.argv = ["scraper.py"]; rc = scraper.main()
-assert rc == 0 and "8 contracts" in buf.getvalue(), buf.getvalue()[-200:]
-print("main() OK:", buf.getvalue().strip().splitlines()[-1])
+# ---- missing tonnage must not distort the weighted average
+D = C.copy(); D.loc[D.product_code == "2", "quantity_t"] = np.nan
+r = get(A.sales_by_period(D, "Year", currency="USD", as_of=AS_OF), "2025")
+assert abs(r.avg_price - (5000 + 21000) / (100 + 300)) < 1e-9 and r.value == 38000
 
-# 4) a failing contracts step must be reported, not swallowed
-orig = scraper.update_contracts
-scraper.update_contracts = lambda **k: (_ for _ in ()).throw(RuntimeError("boom"))
-res, _ = run(full=False)
-assert res["errors"] and "boom" in res["errors"][0]
-scraper.update_contracts = orig
-print("errors are surfaced OK")
+# ---- change vs previous period, empty input, bad period
+ch = A.add_change(A.sales_by_period(C, "Year", currency="USD", as_of=AS_OF), "value")
+assert abs(get(ch, "2026").change_pct - (100*80 + 200*90 + 100*100 - 38000) / 38000 * 100) < 1e-9
+assert A.sales_by_period(pd.DataFrame(), "Year").empty
+try: A.add_period(C["date"], "Decade"); raise SystemExit("should have failed")
+except ValueError: pass
+print("analytics tests passed")

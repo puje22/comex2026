@@ -1,0 +1,52 @@
+name: Tests
+
+# Runs the code tests when you push a change (NOT on the data schedule),
+# so a missing or failing test can never block the data updates.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["data/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install requests beautifulsoup4 pandas
+
+      - name: Check that every test file is present
+        run: |
+          for f in test_no_undefined_names test_parsers test_contracts test_analytics test_update test_e2e_local_server; do
+            test -f "tests/$f.py" || { echo "::error::tests/$f.py is missing from the repository - re-upload the tests folder"; exit 1; }
+          done
+
+      - name: Check each test file has the right content
+        run: |
+          check() { grep -q "$2" "tests/$1.py" || { echo "::error::tests/$1.py has the wrong content (it should contain: $2). Re-upload this file from the zip."; exit 1; }; }
+          check test_parsers "def test_trades"
+          check test_contracts "def test_all_markups"
+          check test_update "def fake_fetch3"
+          check test_analytics "sales_by_period"
+          check test_e2e_local_server "socketserver"
+          check test_no_undefined_names "undefined name"
+          if grep -q "from test_contracts import" tests/test_contracts.py; then
+            echo "::error::tests/test_contracts.py imports itself - it contains another test file's content. Re-upload it from the zip."; exit 1
+          fi
+
+      - name: Run tests
+        run: |
+          python tests/test_no_undefined_names.py
+          python tests/test_parsers.py
+          python tests/test_contracts.py
+          python tests/test_analytics.py
+          python tests/test_update.py
+          python tests/test_e2e_local_server.py

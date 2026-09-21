@@ -1,104 +1,95 @@
-import sys, pathlib, tempfile
+"""Daily trading report parser, tested with the real values from comex.mse.mn/show_trading_infos/2026-09-10 and -11,
+rendered in three different markups (the real markup isn't known)."""
+import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import scraper
-sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from test_parsers import trade
 
-def page(ids, last=3):
-    body = "".join(trade(f"2026.09.{20-i%10:02d} 10:00", i, "Энержи Ресурс ХХК", "Нүүрс", "Баяжуулсан коксжих нүүрс",
-                        ["1,150.00 CNY", "$1,200.00 CNY", "+50.00 (+4.35%)"]) for i in ids)
-    nav = "".join(f'<a href="https://comex.mse.mn/show-trades?page={p}">{p}</a>' for p in range(2, last + 1))
-    return f"<html><body>{body}{nav}</body></html>"
+L = {k: lbl for k, lbl, _ in scraper.CONTRACT_LABELS}
+D0911 = {
+ "commodity_mn": ["Нүүрс"]*4, "product_type": ["Боловсруулаагүй"]*3 + ["Баяжуулсан"],
+ "grade_mn": ["1/3 коксжих нүүрс", "Дэгдэмхий бодис дунд, коксжих нүүрс", "Дэгдэмхий бодис дунд, коксжих нүүрс", "Баяжуулсан коксжих нүүрс"],
+ "date": ["2026-09-11"]*4, "bidders": ["3", "6", "4", "5"],
+ "company_raw": ["Тавантолгой ХК"]*3 + ["Энержи Ресурс ХХК"],
+ "address": ["Өмнөговь аймаг Цогтцэций сум Цагаан-Овоо баг Тавантолгой Хувьцаат Компани"]*3 + ["16 давхар, Сэнтрал Тауэр, 1-р хороо, Сүхбаатар дүүрэг, Улаанбаатар хот, 14200, Монгол улс"],
+ "registration_no": ["TTOA-2026-043", "TTOA-2026-042", "TTOA-2026-041", "ER-26179"], "contract_type": ["Форвард"]*4,
+ "product_code": ["C04-2026091104", "C03-2026091103", "C03-2026091102", "C01-2026091101"],
+ "start": ["160 USD /тонн", "180 USD /тонн", "180 USD /тонн", "1150 CNY /тонн"],
+ "deal": ["160 USD /тонн", "191 USD /тонн", "191 USD /тонн", "1445 CNY /тонн"],
+ "total": ["16,384,000 USD", "19,558,400 USD", "19,558,400 USD", "18,496,000 CNY"],
+ "premium": ["0%", "6.11%", "6.11%", "25.65%"],
+ "lots": ["16 Багц/102400 тонн/", "16 Багц/102400 тонн/", "16 Багц/102400 тонн/", "2 Багц/12800 тонн/"],
+ "quality": ["Ash (db): 18.9 (-4.0, +6.0)\nVolatile (daf): 29.1", "Ash (db): 15.64\nG-index (5:1): 76.0", "Ash (db): 15.64\nG-index (5:1): 76.0", "Ash (dry, %) ≤ 11.0%\nG index ≥ 75"],
+}
+D0910 = {
+ "commodity_mn": ["Молибден", "Нүүрс", "Нүүрс", "Төмөр"], "product_type": ["Баяжмал", "Баяжуулсан", "Баяжуулсан", "Хүдэр"],
+ "grade_mn": ["44%-c багагүй молибдены агуулгатай баяжмал", "Баяжуулсан коксжих чанаргүй нүүрс", "Баяжуулсан сул коксжих нүүрс", "Fe-52% Төмрийн хүдэр"],
+ "date": ["2026-09-10"]*4, "bidders": ["3"]*4,
+ "company_raw": ["Эрдэнэт Үйлдвэр ТӨҮГ", "Тавантолгой ХК", "Тавантолгой ХК", "Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/"],
+ "address": ["Монгол Улс, Орхон аймаг, Баян-Өндөр сум, Найрамдал талбай", "Өмнөговь аймаг Цогтцэций сум", "Өмнөговь аймаг Цогтцэций сум", "Улаанбаатар хот, Баянзүрх дүүрэг"],
+ "registration_no": ["ERD-10-2026", "TTOA-2026-040", "TTOA-2026-039", "ECM-26-137"], "contract_type": ["Форвард"]*4,
+ "product_code": ["MO01-2026091001", "C10-2026091003", "C02-2026091002", "FE03-2026091001"],
+ "start": ["28317.9 USD /тонн", "63 USD /тонн", "120 USD /тонн", "65 USD /тонн"],
+ "deal": ["33767.9 USD /тонн", "70 USD /тонн", "120.5 USD /тонн", "66.5 USD /тонн"],
+ "total": ["15,803,377 USD", "4,480,000 USD", "24,678,400 USD", "438,900 USD"],
+ "premium": ["19.25%", "11.11%", "0.42%", "2.31%"],
+ "lots": ["13", "10 Багц/64000 тонн/", "32 Багц/204800 тонн/", "2 Багц/6600 тонн/"],
+ "quality": ["Молибден /Мо/ >44%\nЗэс /Cu/ <3%", "Ash (db): 30.0 (-5, +5)", "Ash (db): ≤12", "H2O 0.5-1.0%\nFe <52%"],
+}
+SIDEBAR = '<h6><a href="https://comex.mse.mn/show_trading_infos/2026-09-18">09-Р САРЫН 18 ӨДРИЙН УУЛ УУРХАЙН БҮТЭЭГДЭХҮҮНИЙ АРИЛЖААНЫ МЭДЭЭ</a></h6>'
 
-tmp = pathlib.Path(tempfile.mkdtemp())
-scraper.DATA_DIR, scraper.TRADES_CSV, scraper.NOTICES_CSV = tmp, tmp/"trades.csv", tmp/"notices.csv"
-scraper.REQUEST_DELAY = 0
+def html_li_span(d):
+    rows = "".join(f'<li><span class="k">{L[k]}</span>' + "".join(f"<span>{v.replace(chr(10), '<br>')}</span>" for v in d[k]) + "</li>" for k in L)
+    return f"<html><body><nav><a>Арилжааны мэдээлэл</a></nav><ul><li>Арилжигдсан уул уурхайн бүтээгдэхүүний мэдээлэл</li>{rows}</ul>{SIDEBAR}</body></html>"
 
-SITE = {1: range(30, 25, -1), 2: range(25, 20, -1), 3: range(20, 15, -1)}
-calls = []
-def fake_fetch(session, url, retries=3):
-    p = int(url.split("page=")[1]) if "page=" in url else 1
-    calls.append(p); return page(SITE[p])
-scraper.fetch = fake_fetch
-scraper.make_session = lambda: None
+def html_table(d):
+    rows = "".join(f"<tr><th>{L[k]}</th>" + "".join(f"<td>{v.replace(chr(10), '<br>')}</td>" for v in d[k]) + "</tr>" for k in L)
+    return f"<html><body><table>{rows}</table>{SIDEBAR}</body></html>"
 
-n = scraper.update_trades(full=True, log=lambda *_: None)
-assert n == 15 and calls == [1, 2, 3], (n, calls)
-assert len(scraper.load_trades()) == 15
+def html_bare_text(d):   # label + all values as one run of text (what a text-only rendering looks like)
+    rows = "".join(f"<li>{L[k]} " + " ".join(d[k]) + "</li>" for k in L if k != "quality")
+    return f"<html><body><ul>{rows}</ul>МОНГОЛЫН ХӨРӨНГИЙН БИРЖ {SIDEBAR}</body></html>"
 
-# new trades appear on page 1 (ids 33..31) and everything shifts down
-SITE = {1: range(33, 28, -1), 2: range(28, 23, -1), 3: range(23, 18, -1)}
-calls.clear()
-n = scraper.update_trades(full=False, log=lambda *_: None)
-df = scraper.load_trades()
-assert n == 3 + 0 or n >= 3, n
-assert set(range(31, 34)) <= set(df.trade_id) and df.trade_id.is_unique
-assert calls[:2] == [1, 2], calls          # always re-reads pages 1-2
-print("incremental OK: new =", n, "| pages fetched:", calls, "| rows:", len(df))
+def check_0911(rows):
+    assert len(rows) == 4, len(rows)
+    r = {x["product_code"]: x for x in rows}
+    a = r["C04-2026091104"]
+    assert (a["company_en"], a["grade"], a["commodity"]) == ("Tavan Tolgoi JSC", "1/3 coking coal", "Coal")
+    assert (a["lots"], a["quantity_t"], a["quantity_source"], a["total_value"], a["currency"], a["bidders"]) == (16, 102400, "reported", 16384000, "USD", 3)
+    assert a["price_unit"] == "тонн" and a["start_price"] == 160 and a["deal_price"] == 160 and a["premium_pct"] == 0
+    b = r["C03-2026091103"]; assert (b["deal_price"], b["total_value"], b["bidders"], b["premium_pct"]) == (191, 19558400, 6, 6.11)
+    e = r["C01-2026091101"]
+    assert (e["company_en"], e["currency"], e["deal_price"], e["lots"], e["quantity_t"], e["total_value"]) == ("Energy Resources", "CNY", 1445, 2, 12800, 18496000)
+    for x in rows:  # internal consistency: total = price x tonnes
+        assert abs(x["deal_price"] * x["quantity_t"] - x["total_value"]) < 1, x["product_code"]
 
-# nothing new -> stops after page 2
-calls.clear(); n = scraper.update_trades(full=False, log=lambda *_: None)
-assert n == 0 and calls == [1, 2], (n, calls)
-print("no-change run OK: pages fetched:", calls)
+def check_0910(rows):
+    assert len(rows) == 4, len(rows)
+    r = {x["product_code"]: x for x in rows}
+    mo = r["MO01-2026091001"]                      # only the lot count is printed -> tonnes implied from value / price
+    assert mo["commodity"] == "Molybdenum" and mo["lots"] == 13 and mo["total_value"] == 15803377
+    assert mo["quantity_source"].startswith("implied") and abs(mo["quantity_t"] - 468) < 0.01, mo["quantity_t"]
+    assert mo["company_en"] == "Erdenet Mining Corporation"
+    fe = r["FE03-2026091001"]
+    assert (fe["commodity"], fe["lots"], fe["quantity_t"], fe["total_value"]) == ("Iron ore", 2, 6600, 438900)
+    assert fe["company_en"].startswith("Mongolrostsvetmet") and fe["grade"] == "Iron ore Fe 52%"
+    c = r["C02-2026091002"]; assert (c["lots"], c["quantity_t"], c["total_value"], c["grade"]) == (32, 204800, 24678400, "Washed semi-soft coking coal")
+    assert r["C10-2026091003"]["company_en"] == "Tavan Tolgoi JSC"
 
-# --- old CSV that had the two Tavan Tolgoi companies merged gets fixed on load ---
-import pandas as pd
-old = pd.DataFrame([{"trade_id": 1, "trade_time": "2026-07-22 10:00", "date": "2026-07-22",
-                     "company": "Эрдэнэс Тавантолгой ХК", "company_en": "Erdenes Tavan Tolgoi", "company_raw": "Тавантолгой ХК",
-                     "grade_mn": "1/3 коксжих нүүрс", "grade": "1/3 coking coal"},
-                    {"trade_id": 2, "trade_time": "2026-07-22 11:00", "date": "2026-07-22",
-                     "company": "Эрдэнэс Тавантолгой ХК", "company_en": "Erdenes Tavan Tolgoi", "company_raw": "Эрдэнэс Тавантолгой ХК",
-                     "grade_mn": "1/3 коксжих нүүрс", "grade": "1/3 coking coal"}])
-old.to_csv(scraper.TRADES_CSV, index=False)
-fixed = scraper.load_trades().set_index("trade_id")
-assert fixed.loc[1, "company_en"] == "Tavan Tolgoi JSC" and fixed.loc[2, "company_en"] == "Erdenes Tavan Tolgoi"
-print("legacy CSV re-normalised OK")
+def test_all_markups():
+    for name, fn in [("li/span", html_li_span), ("table", html_table), ("bare text", html_bare_text)]:
+        check_0911(scraper.parse_contracts(fn(D0911), "2026-09-11"))
+        check_0910(scraper.parse_contracts(fn(D0910), "2026-09-10"))
+        print("contracts parsed OK with markup:", name)
 
-from test_parsers import TRADES_HTML, NOTICE_HTML
+def test_quality_kept_when_dom_available():
+    rows = scraper.parse_contracts(html_table(D0910), "2026-09-10")
+    mo = next(x for x in rows if x["product_code"].startswith("MO01"))
+    assert "Молибден /Мо/ >44%" in mo["quality"] and "Зэс /Cu/ <3%" in mo["quality"]
 
-# --- notices accumulate across runs; archive failure is non-fatal ---
-def fake_fetch2(session, url, retries=3):
-    if url.endswith("/home"): return NOTICE_HTML
-    raise RuntimeError("archive not reachable")
-scraper.fetch = fake_fetch2
-if scraper.NOTICES_CSV.exists(): scraper.NOTICES_CSV.unlink()
-scraper.update_notices(log=lambda *_: None)
-first = len(scraper.load_notices())
-extra = NOTICE_HTML.replace("ER-26183", "ER-99999").replace("2026-09-18", "2026-09-19")
-scraper.fetch = lambda s, url, retries=3: extra if url.endswith("/home") else (_ for _ in ()).throw(RuntimeError("x"))
-scraper.update_notices(log=lambda *_: None)
-assert len(scraper.load_notices()) > first, "notices must accumulate, not be overwritten"
-print("notice accumulation OK:", first, "->", len(scraper.load_notices()))
+def test_two_tables_one_page():
+    both = html_table(D0911).replace("</body>", "") + html_table(D0910).split("<body>")[1]
+    rows = scraper.parse_contracts(both)
+    assert len(rows) == 8
 
-# --- parser fallback when a page has no PDF links ---
-no_pdf = NOTICE_HTML.replace('<a href="', '<a data-x="')
-rows = scraper.parse_notices(no_pdf)
-assert {r["code"] for r in rows} >= {"2641-CO", "ER-26183", "ECM-26-140", "ERD-10-2026"}, [r["code"] for r in rows]
-assert next(r for r in rows if r["code"] == "ECM-26-140")["company_en"].startswith("Mongolrostsvetmet")
-print("no-PDF-link fallback OK")
-
-
-# --- daily trading reports -> contracts.csv ---
-from test_contracts import D0911, D0910, html_table
-scraper.CONTRACTS_CSV, scraper.CONTRACTS_GONE = scraper.DATA_DIR / "contracts.csv", scraper.DATA_DIR / "contracts_no_page.txt"
-tr = pd.DataFrame([
-    {"trade_id": 1, "trade_time": "2026-09-11 10:00", "date": "2026-09-11", "status": "sold"},
-    {"trade_id": 2, "trade_time": "2026-09-10 10:00", "date": "2026-09-10", "status": "sold"},
-    {"trade_id": 3, "trade_time": "2026-09-09 10:00", "date": "2026-09-09", "status": "sold"},      # report page does not exist
-    {"trade_id": 4, "trade_time": "2026-09-08 10:00", "date": "2026-09-08", "status": "no_bid"},   # no sold auction -> never fetched
-])
-tr.to_csv(scraper.TRADES_CSV, index=False)
-fetched = []
-def fake_fetch3(session, url, retries=3, allow_404=False):
-    d = url.rsplit("/", 1)[1]; fetched.append(d)
-    return {"2026-09-11": html_table(D0911), "2026-09-10": html_table(D0910)}.get(d)   # None = 404
-scraper.fetch = fake_fetch3
-n = scraper.update_contracts(full=True, log=lambda *_: None)
-c = scraper.load_contracts()
-assert n == 8 and len(c) == 8 and sorted(fetched) == ["2026-09-09", "2026-09-10", "2026-09-11"], (n, fetched)
-assert c["total_value"].sum() == 16384000 + 19558400*2 + 18496000 + 15803377 + 4480000 + 24678400 + 438900
-assert "2026-09-09" in scraper.CONTRACTS_GONE.read_text()
-# second run: known dates are not re-fetched (they are older than 3 days), the missing page is remembered
-fetched.clear(); n = scraper.update_contracts(full=False, log=lambda *_: None)
-assert fetched == [] and len(scraper.load_contracts()) == 8, fetched
-print("contracts update OK: 8 contracts, missing page remembered, no re-fetch")
+if __name__ == "__main__":
+    test_all_markups(); test_quality_kept_when_dom_available(); test_two_tables_one_page(); print("contract parser tests passed")
