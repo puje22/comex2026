@@ -58,6 +58,36 @@ print("legacy CSV re-normalised OK")
 
 from test_parsers import TRADES_HTML, NOTICE_HTML
 
+# Older pages put a closing slash before the quantity unit and repeat the time.
+from notice_fixture import notice_page
+for quantity_text in ("4 багц /25,600/ тонн 14:00", "4 Багц/25,600тн/", "4 багц /25,600 тонн/"):
+    html = notice_page(code="ER-24165", date="2024-06-26").replace("2 Багц/12800тн/", quantity_text)
+    parsed = scraper.parse_notice_archive(html)
+    assert len(parsed) == 1 and parsed[0]["lots"] == 4 and parsed[0]["quantity_t"] == 25600
+print("legacy notice quantity formats OK")
+
+for text, quantity, lots in [
+    ("4 багц 25,600 тонн 14:00", 25600, 4),
+    ("4 lots /25,600 tons/ 14:00", 25600, 4),
+    ("265 багц /1.696.000 тонн/", 1696000, 265),
+    ("2 багц /12.800 тонн/", 12800, 2),
+    ("8 багц /51’200 тонн/", 51200, 8),
+    ("2 批量/6800 吨/14:00", 6800, 2),
+]:
+    h = notice_page().replace("2 Багц/12800тн/", text).replace("1,150¥", "$72")
+    r = scraper.parse_notice_archive(h)[0]
+    assert (r["quantity_t"], r["lots"], r["start_price"], r["currency"]) == (quantity, lots, 72, "USD"), r
+h = notice_page().replace("2 Багц/12800тн/", "3,000 НМТ /нойтон метр тонн/ 2,718 ХМТ /хуурай метр тонн/")
+h = h.replace("1,150¥", "2,267.43 ам.дол/ХМТ")
+r = scraper.parse_notice_archive(h)[0]
+assert r["lots"] is None and r["quantity_wet_t"] == 3000 and r["quantity_dry_t"] == 2718
+assert r["start_price"] == 2267.43 and r["currency"] == "USD" and r["price_unit"] == "ХМТ"
+h = notice_page(code="0").replace("2026-09-18 10:00:00", "2026-09-18 00:00:00").replace("2 Багц/12800тн/", "2 Багц/12800тн/ 14:00")
+r = scraper.parse_notice_archive(h)[0]
+assert r["code"].startswith("archive-") and r["time"] == "14:00"
+assert scraper.parse_notice_archive(h.replace("mn-0.pdf", "mn-another.pdf"))[0]["code"] != r["code"]
+print("historical numbers, languages, currency, wet/dry tonnes and missing codes OK")
+
 # --- archive pagination, accumulation, amendments and failure preservation ---
 from notice_fixture import notice_page
 from urllib.parse import urlparse, parse_qs

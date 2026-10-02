@@ -18,6 +18,7 @@ keeps working if the site's markup or styling changes, as long as the wording
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import re
 import sys
 import time
@@ -90,7 +91,8 @@ CONTRACT_COLUMNS = [
 NOTICE_COLUMNS = [
     "scraped_at", "date", "time", "company", "company_en", "code", "commodity",
     "grade", "grade_mn", "currency", "start_price", "lots", "quantity_t", "pdf_url",
-    "price_type", "lab_pdf_url",
+    "price_type", "lab_pdf_url", "quantity_wet_t", "quantity_dry_t",
+    "quantity_basis", "price_unit", "code_raw",
 ]
 
 # --------------------------------------------------------------------------
@@ -197,8 +199,16 @@ def parse_trades(html: str) -> list[dict]:
         })
     return rows
 
+def _notice_quantity_number(value: str) -> float:
+    value = re.sub(r"[\s,\u2019']", "", value)
+    # Historical quantities use periods as thousands separators, e.g. 12.800.
+    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", value):
+        value = value.replace(".", "")
+    return float(value)
+
+
 def parse_notice_archive(html: str) -> list[dict] | None:
-    """Parse the archive table; None means this is a different layout."""
+    """Parse current and historical archive tables without guessing missing lots."""
     soup = BeautifulSoup(html, "html.parser")
     table = next((t for t in soup.find_all("table")
                   if "Захиалгын дугаар" in t.get_text() and "Худалдагч" in t.get_text()), None)
@@ -206,6 +216,8 @@ def parse_notice_archive(html: str) -> list[dict] | None:
         return None
     rows = []
     now = pd.Timestamp.now(tz="Asia/Ulaanbaatar").strftime("%Y-%m-%d %H:%M")
+    number = r"[\d][\d,.'\u2019]*"
+    currency = r"[$¥€₮]|USD|CNY|MNT|EUR|RUB|JPY|ам\.?\s*дол(?:лар)?"
     for tr in table.select("tbody tr"):
         cells = tr.find_all(["td", "th"], recursive=False)
         if not cells or (len(cells) == 1 and cells[0].get("colspan")):
@@ -214,25 +226,48 @@ def parse_notice_archive(html: str) -> list[dict] | None:
             raise ValueError(f"Unexpected notice archive row: {len(cells)} columns")
         values = [_flatten(c) for c in cells]
         when = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?::\d{2})?)", values[4])
-        qty = re.search(r"([\d,]+)\s*Багц\s*/\s*([\d,.]+)\s*(?:тн|тонн)", values[5], re.I)
-        price = re.search(r"([\d,]+(?:\.\d+)?)\s*([$¥€₮]|USD|CNY|MNT|EUR|RUB|JPY)", values[6])
-        if not when or not qty or not price or not values[8]:
+        qty = re.search(rf"({number})\s*(?:багц|lots?|批量)\s*(?:буюу\s+нийт\s*)?/?\s*({number})\s*/?\s*(?:тн|тонн|tons?|tonnes?|吨)", values[5], re.I)
+        wet = re.search(rf"({number})\s*НМТ", values[5], re.I)
+        dry = re.search(rf"({number})\s*ХМТ", values[5], re.I)
+        price = re.search(rf"({number})\s*({currency})", values[6], re.I)
+        prefix = re.search(rf"({currency})\s*({number})", values[6], re.I) if not price else None
+        if not when or not (qty or wet or dry) or not (price or prefix):
             raise ValueError(f"Could not parse archive notice {values[8]!r}: {values[4:7]!r}")
         seller, seller_en = normalize_company(values[3])
         def link(index):
             a = cells[index].find("a", href=True)
             return urljoin(BASE, a["href"]) if a else None
+        pdf_url = link(10)
+        code = values[8]
+        if code in ("", "0", "-", "—"):
+            # Older records lack order codes. Avoid collapsing separate notices on one day.
+            identity = pdf_url or "|".join(values[1:7])
+            code = "archive-" + hashlib.sha256(identity.encode()).hexdigest()[:20]
+        amount, cur = (price[1], price[2]) if price else (prefix[2], prefix[1])
+        cur = "USD" if cur.lower().startswith("ам") else CURRENCY_SYMBOLS.get(cur, cur.upper())
+        wet_t = _notice_quantity_number(wet[1]) if wet else None
+        dry_t = _notice_quantity_number(dry[1]) if dry else None
+        # quantity_t remains dry tonnes for dry-priced copper, with both bases retained.
+        tonnes = _notice_quantity_number(qty[2]) if qty else (dry_t if dry_t is not None else wet_t)
+        time_value = when[2][:5]
+        legacy_time = re.search(r"\b(\d{1,2}:\d{2})(?::\d{2})?", values[5])
+        if time_value == "00:00" and legacy_time:
+            time_value = legacy_time[1].zfill(5)
+        unit = re.search(r"/\s*(ХМТ|НМТ|тонн|тн|tons?|tonnes?)", values[6], re.I)
         rows.append({
-            "scraped_at": now, "date": when[1], "time": when[2][:5],
-            "company": seller, "company_en": seller_en, "code": values[8],
+            "scraped_at": now, "date": when[1], "time": time_value,
+            "company": seller, "company_en": seller_en, "code": code, "code_raw": values[8],
             "commodity": COMMODITIES.get(values[1], _guess_commodity(values[2], seller)),
             "grade": grade_en(values[2]), "grade_mn": values[2],
-            "currency": CURRENCY_SYMBOLS.get(price[2], price[2]),
-            "start_price": _num(price[1]), "lots": int(qty[1].replace(",", "")),
-            "quantity_t": _num(qty[2]), "pdf_url": link(10),
+            "currency": cur, "start_price": _num(amount),
+            "lots": int(_notice_quantity_number(qty[1])) if qty else None,
+            "quantity_t": tonnes, "quantity_wet_t": wet_t, "quantity_dry_t": dry_t,
+            "quantity_basis": "reported" if qty else ("dry" if dry else "wet"),
+            "price_unit": unit[1] if unit else None, "pdf_url": pdf_url,
             "price_type": values[7], "lab_pdf_url": link(9),
         })
     return rows
+
 
 def parse_notices(html: str) -> list[dict]:
     archive = parse_notice_archive(html)
