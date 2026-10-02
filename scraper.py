@@ -2,43 +2,36 @@
 """
 Scraper for the Mongolian Stock Exchange COMEX mining-products e-auction site
 (https://comex.mse.mn).
-
 Collects
   * every completed / failed auction  -> data/trades.csv   (from /show-trades)
-  * recent auction notices            -> data/notices.csv  (from /home)
+  * all archived auction notices            -> data/notices.csv  (from /show-notices)
   * lots / tonnes / contract value    -> data/contracts.csv (from /show_trading_infos/<date>,
                                           one daily report page per trading day)
-
 Usage
   python scraper.py              # incremental update (fast, use this on a schedule)
   python scraper.py --full       # crawl every page of history (first run, ~2-3 min)
   python scraper.py --debug      # print the flattened text of page 1 (to fix parsing)
   python scraper.py --debug-contracts 2026-09-11   # print + parse one daily trading report
-
 The parser works on the *visible text* of the page instead of CSS classes, so it
 keeps working if the site's markup or styling changes, as long as the wording
 ("Арилжааны дугаар", commodity names, etc.) stays the same.
 """
 from __future__ import annotations
-
 import argparse
 import re
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urljoin
-
+from urllib.parse import urljoin, urlparse, parse_qs
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-
 BASE = "https://comex.mse.mn"
 DATA_DIR = Path(__file__).parent / "data"
 TRADES_CSV = DATA_DIR / "trades.csv"
 NOTICES_CSV = DATA_DIR / "notices.csv"
 CONTRACTS_CSV = DATA_DIR / "contracts.csv"
 CONTRACTS_GONE = DATA_DIR / "contracts_no_page.txt"  # dates that have no daily report page
-
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; comex-dashboard/1.0; personal research)",
     "Accept-Language": "mn,en;q=0.5",
@@ -47,6 +40,7 @@ REQUEST_DELAY = 1.0  # seconds between page requests - be polite to the server
 
 # --------------------------------------------------------------------------
 # Lookup tables. Add new commodities / companies / grades here.
+
 # --------------------------------------------------------------------------
 COMMODITIES = {
     "Нүүрс": "Coal",
@@ -55,7 +49,6 @@ COMMODITIES = {
     "Зэс": "Copper",
     "Молибден": "Molybdenum",
 }
-
 # (substring to look for, canonical Mongolian name, English name) - first match wins
 COMPANIES = [
     ("Эрдэнэт", "Эрдэнэт Үйлдвэр ТӨҮГ", "Erdenet Mining Corporation"),
@@ -66,7 +59,6 @@ COMPANIES = [
     ("Энержи Ресурс", "Энержи Ресурс ХХК", "Energy Resources"),
     ("Хангад", "Хангад Эксплорэйшн ХХК", "Khangad Exploration"),
 ]
-
 GRADES_EN = {
     "Дэгдэмхий бодис дунд, коксжих нүүрс": "Medium-volatile coking coal",
     "Баяжуулсан коксжих нүүрс": "Washed coking coal",
@@ -83,9 +75,7 @@ GRADES_EN = {
     "22.35%-ийн зэсийн агуулгатай баяжмал": "Copper concentrate (22.35% Cu)",
     "44%-c багагүй молибдены агуулгатай баяжмал": "Molybdenum concentrate (>=44% Mo)",
 }
-
 CURRENCY_SYMBOLS = {"$": "USD", "¥": "CNY", "€": "EUR", "₮": "MNT"}
-
 TRADE_COLUMNS = [
     "trade_id", "trade_time", "date", "company", "company_en", "company_raw",
     "commodity", "commodity_mn", "grade", "grade_mn", "currency",
@@ -100,10 +90,12 @@ CONTRACT_COLUMNS = [
 NOTICE_COLUMNS = [
     "scraped_at", "date", "time", "company", "company_en", "code", "commodity",
     "grade", "grade_mn", "currency", "start_price", "lots", "quantity_t", "pdf_url",
+    "price_type", "lab_pdf_url",
 ]
 
 # --------------------------------------------------------------------------
 # Helpers
+
 # --------------------------------------------------------------------------
 COMMODITY_RE = re.compile(r"(?<!\w)(" + "|".join(map(re.escape, COMMODITIES)) + r")\s+-\s+")
 HEADER_RE = re.compile(
@@ -112,7 +104,6 @@ HEADER_RE = re.compile(
 PRICE_RE = re.compile(r"(-?[\d,]+(?:\.\d+)?)\s*(USD|CNY|MNT|EUR|RUB|JPY)\b")
 CHANGE_RE = re.compile(r"([+-][\d,]+(?:\.\d+)?)\s*\(\s*([+-]?[\d.,]+)\s*%\s*\)")
 NO_BID = "Худалдан авагч үнийн санал ирүүлээгүй"  # "buyer submitted no bid"
-
 NOTICE_RE = re.compile(
     r"(?P<seller>[^\d§]*?)/(?P<code>[A-Za-z0-9][A-Za-z0-9\-_]*)\s+(?P<grade>.+?)\s+"
     r"(?P<price>[\d,]+(?:\.\d+)?)\s*(?P<cur>[$¥€₮])\s+"
@@ -120,14 +111,11 @@ NOTICE_RE = re.compile(
     r"(?P<date>\d{4}-\d{2}-\d{2})"
 )
 
-
 def _num(s: str) -> float:
     return float(s.replace(",", ""))
 
-
 def _flatten(soup: BeautifulSoup) -> str:
     return re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
-
 
 def normalize_company(raw: str) -> tuple[str, str]:
     raw = re.sub(r"\s+", " ", raw).strip(" /")
@@ -136,14 +124,14 @@ def normalize_company(raw: str) -> tuple[str, str]:
             return mn, en
     return raw, raw
 
-
 def grade_en(grade_mn: str) -> str:
     return GRADES_EN.get(grade_mn, grade_mn)
 
-
 # --------------------------------------------------------------------------
 # Parsers (pure functions: HTML string in -> list of dicts out)
+
 # --------------------------------------------------------------------------
+
 def parse_trades(html: str) -> list[dict]:
     text = _flatten(BeautifulSoup(html, "html.parser"))
     heads = list(HEADER_RE.finditer(text))
@@ -152,14 +140,12 @@ def parse_trades(html: str) -> list[dict]:
         end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
         body = text[m.end():end].strip()
         year, month, day, hhmm, trade_id = m.groups()[0], m.groups()[1], m.groups()[2], m.groups()[3], m.groups()[4]
-
         cm = COMMODITY_RE.search(body)
         if not cm:
             print(f"  ! could not find a known commodity in trade {trade_id}: {body[:80]!r}", file=sys.stderr)
             continue
         company_raw = body[:cm.start()].strip()
         after = body[cm.end():]
-
         # grade text runs until the "no bid" phrase or the first price
         cut = len(after)
         if NO_BID in after:
@@ -169,11 +155,9 @@ def parse_trades(html: str) -> list[dict]:
             cut = min(cut, pm.start())
         grade_mn = after[:cut].strip()
         rest = after[cut:]
-
         prices = PRICE_RE.findall(rest)
         currency = prices[0][1] if prices else None
         start = final = change = change_pct = None
-
         if NO_BID in rest:
             status = "no_bid"
             if prices and _num(prices[0][0]) > 0:
@@ -192,7 +176,6 @@ def parse_trades(html: str) -> list[dict]:
             elif status == "sold" and start:
                 change = final - start
                 change_pct = change / start * 100
-
         company_mn, company_en = normalize_company(company_raw)
         rows.append({
             "trade_id": int(trade_id),
@@ -214,8 +197,47 @@ def parse_trades(html: str) -> list[dict]:
         })
     return rows
 
+def parse_notice_archive(html: str) -> list[dict] | None:
+    """Parse the archive table; None means this is a different layout."""
+    soup = BeautifulSoup(html, "html.parser")
+    table = next((t for t in soup.find_all("table")
+                  if "Захиалгын дугаар" in t.get_text() and "Худалдагч" in t.get_text()), None)
+    if table is None:
+        return None
+    rows = []
+    now = pd.Timestamp.now(tz="Asia/Ulaanbaatar").strftime("%Y-%m-%d %H:%M")
+    for tr in table.select("tbody tr"):
+        cells = tr.find_all(["td", "th"], recursive=False)
+        if not cells or (len(cells) == 1 and cells[0].get("colspan")):
+            continue
+        if len(cells) != 11:
+            raise ValueError(f"Unexpected notice archive row: {len(cells)} columns")
+        values = [_flatten(c) for c in cells]
+        when = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?::\d{2})?)", values[4])
+        qty = re.search(r"([\d,]+)\s*Багц\s*/\s*([\d,.]+)\s*(?:тн|тонн)", values[5], re.I)
+        price = re.search(r"([\d,]+(?:\.\d+)?)\s*([$¥€₮]|USD|CNY|MNT|EUR|RUB|JPY)", values[6])
+        if not when or not qty or not price or not values[8]:
+            raise ValueError(f"Could not parse archive notice {values[8]!r}: {values[4:7]!r}")
+        seller, seller_en = normalize_company(values[3])
+        def link(index):
+            a = cells[index].find("a", href=True)
+            return urljoin(BASE, a["href"]) if a else None
+        rows.append({
+            "scraped_at": now, "date": when[1], "time": when[2][:5],
+            "company": seller, "company_en": seller_en, "code": values[8],
+            "commodity": COMMODITIES.get(values[1], _guess_commodity(values[2], seller)),
+            "grade": grade_en(values[2]), "grade_mn": values[2],
+            "currency": CURRENCY_SYMBOLS.get(price[2], price[2]),
+            "start_price": _num(price[1]), "lots": int(qty[1].replace(",", "")),
+            "quantity_t": _num(qty[2]), "pdf_url": link(10),
+            "price_type": values[7], "lab_pdf_url": link(9),
+        })
+    return rows
 
 def parse_notices(html: str) -> list[dict]:
+    archive = parse_notice_archive(html)
+    if archive is not None:
+        return archive
     soup = BeautifulSoup(html, "html.parser")
     for a in soup.find_all("a", href=True):
         if "auction_schedules" in a["href"]:
@@ -262,7 +284,6 @@ def parse_notices(html: str) -> list[dict]:
         })
     return rows
 
-
 def _guess_commodity(grade_mn: str, seller_mn: str) -> str:
     g = grade_mn.lower()
     if "нүүрс" in g:
@@ -277,16 +298,15 @@ def _guess_commodity(grade_mn: str, seller_mn: str) -> str:
         return "Copper"
     return "Other"
 
-
 def last_page_number(html: str) -> int | None:
     nums = [int(n) for n in re.findall(r"show-trades\?page=(\d+)", html)]
     return max(nums) if nums else None
-
 
 # --------------------------------------------------------------------------
 # Daily trading report  (/show_trading_infos/YYYY-MM-DD)
 # One column per EXECUTED trade, one row per attribute. Gives the real contract value,
 # lots, tonnes and number of bidders that /show-trades does not have.
+
 # --------------------------------------------------------------------------
 # (key, label on the page, kind of value)
 CONTRACT_LABELS = [
@@ -319,7 +339,6 @@ PRICE_UNIT_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*([A-Z]{3})\s*/\s*(\S+)")
 MONEY_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*([A-Z]{3})")
 LOTS_RE = re.compile(r"(\d+)(?:\s*Багц\s*/\s*([\d,.]+)\s*тонн\s*/?)?")
 
-
 def _split_known(seg: str, n: int, vocab: list[str]) -> list[str] | None:
     """Split a run-together row of n multi-word values, using known values (or exact repetition)."""
     pat = "|".join(re.escape(v) for v in sorted(vocab, key=len, reverse=True))
@@ -333,7 +352,6 @@ def _split_known(seg: str, n: int, vocab: list[str]) -> list[str] | None:
         if len(set(groups)) == 1:
             return groups
     return None
-
 
 def _cells_from_text(kind: str, seg: str, n: int) -> list[str] | None:
     if kind == "skip" or kind == "quality":
@@ -358,7 +376,6 @@ def _cells_from_text(kind: str, seg: str, n: int) -> list[str] | None:
         return _split_known(seg, n, SELLER_NAMES)
     return None
 
-
 def _text_blocks(text: str) -> list[dict]:
     idx = [m.start() for m in re.finditer(re.escape(_FIRST_LABEL), text)]
     blocks = []
@@ -378,7 +395,6 @@ def _text_blocks(text: str) -> list[dict]:
                     cells[key] = got
         blocks.append(cells)
     return blocks
-
 
 def _row_cells(node) -> list[str] | None:
     """Value cells that sit next to the label text node, whatever the markup (table, li/span, div grid)."""
@@ -403,7 +419,6 @@ def _row_cells(node) -> list[str] | None:
                 vals = sub
     return [v.get_text("\n", strip=True) for v in vals] or None
 
-
 def _dom_blocks(soup: BeautifulSoup) -> list[dict]:
     def find(label):
         return soup.find_all(string=lambda t, L=label: bool(t) and t.strip().rstrip(":").strip() == L)
@@ -416,7 +431,6 @@ def _dom_blocks(soup: BeautifulSoup) -> list[dict]:
                 blocks[b][key] = cells
     return blocks
 
-
 def _blocks_ok(blocks: list[dict]) -> bool:
     if not blocks:
         return False
@@ -428,10 +442,8 @@ def _blocks_ok(blocks: list[dict]) -> bool:
             return False
     return True
 
-
 def _f(x: str) -> float:
     return float(x.replace(",", ""))
-
 
 def parse_contracts(html: str, page_date: str | None = None) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
@@ -443,11 +455,9 @@ def parse_contracts(html: str, page_date: str | None = None) -> list[dict]:
         n = len(blk.get("date", []))
         if n == 0:
             continue
-
         def cell(key, i, blk=blk, n=n):
             v = blk.get(key)
             return v[i].strip() if v and len(v) == n else ""
-
         for i in range(n):
             start, deal = PRICE_UNIT_RE.search(cell("start", i)), PRICE_UNIT_RE.search(cell("deal", i))
             total = MONEY_RE.search(cell("total", i))
@@ -488,15 +498,15 @@ def parse_contracts(html: str, page_date: str | None = None) -> list[dict]:
             })
     return rows
 
-
 # --------------------------------------------------------------------------
 # Network
+
 # --------------------------------------------------------------------------
+
 def make_session() -> requests.Session:
     s = requests.Session()
     s.headers.update(HEADERS)
     return s
-
 
 def fetch(session: requests.Session, url: str, retries: int = 3, allow_404: bool = False) -> str | None:
     last_err: Exception | None = None
@@ -519,10 +529,11 @@ def fetch(session: requests.Session, url: str, retries: int = 3, allow_404: bool
             time.sleep(2 * (attempt + 1))
     raise RuntimeError(f"Failed to fetch {url}: {last_err}")
 
-
 # --------------------------------------------------------------------------
 # Storage
+
 # --------------------------------------------------------------------------
+
 def load_trades() -> pd.DataFrame:
     if not TRADES_CSV.exists():
         return pd.DataFrame(columns=TRADE_COLUMNS)
@@ -534,7 +545,6 @@ def load_trades() -> pd.DataFrame:
     if "grade_mn" in df.columns:
         df["grade"] = df["grade_mn"].map(lambda g: grade_en(g) if isinstance(g, str) else g)
     return df
-
 
 def load_contracts() -> pd.DataFrame:
     if not CONTRACTS_CSV.exists():
@@ -548,7 +558,6 @@ def load_contracts() -> pd.DataFrame:
         df["grade"] = df["grade_mn"].map(lambda g: grade_en(g) if isinstance(g, str) else g)
     return df
 
-
 def load_notices() -> pd.DataFrame:
     if not NOTICES_CSV.exists():
         return pd.DataFrame(columns=NOTICE_COLUMNS)
@@ -558,16 +567,16 @@ def load_notices() -> pd.DataFrame:
         df["company_en"] = norm.map(lambda t: t[1])
     return df
 
-
 def _save(df: pd.DataFrame, path: Path, columns: list[str], sort_by: list[str]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     df = df.reindex(columns=columns).sort_values(sort_by, ascending=False)
     df.to_csv(path, index=False, encoding="utf-8")
 
-
 # --------------------------------------------------------------------------
 # Orchestration
+
 # --------------------------------------------------------------------------
+
 def update_trades(full: bool = False, max_pages: int | None = None, log=print) -> int:
     """Scrape /show-trades and merge into data/trades.csv. Returns number of new trades."""
     session = make_session()
@@ -575,7 +584,6 @@ def update_trades(full: bool = False, max_pages: int | None = None, log=print) -
     known = set(existing["trade_id"].astype(int)) if len(existing) else set()
     fresh: list[dict] = []
     page, last_page = 1, None
-
     while True:
         url = f"{BASE}/show-trades" + (f"?page={page}" if page > 1 else "")
         html = fetch(session, url)
@@ -602,7 +610,6 @@ def update_trades(full: bool = False, max_pages: int | None = None, log=print) -
         if page > last_page:
             break
         time.sleep(REQUEST_DELAY)
-
     new_count = len({r["trade_id"] for r in fresh} - known)
     if fresh:
         merged = pd.concat([existing, pd.DataFrame(fresh)], ignore_index=True)
@@ -610,40 +617,59 @@ def update_trades(full: bool = False, max_pages: int | None = None, log=print) -
         _save(merged, TRADES_CSV, TRADE_COLUMNS, ["trade_time", "trade_id"])
     return new_count
 
-
 def update_notices(full: bool = False, max_pages: int | None = None, log=print) -> int:
-    """Scrape auction notices (lots + tonnage) and ACCUMULATE them in data/notices.csv."""
+    """Scan the archive on every run, including older amended notices.
+    --max-pages explicitly limits the scan. Existing history is never deleted.
+    """
+    if max_pages is not None and max_pages < 1:
+        raise ValueError("max_pages must be positive")
     session = make_session()
-    rows = parse_notices(fetch(session, f"{BASE}/home"))
-    log(f"  notices (dashboard): {len(rows)} parsed")
-
-    # Best-effort: the notice archive. Its layout has not been verified, so failures are non-fatal.
+    rows = []
+    page, last = 1, 1
+    fingerprints = set()
     try:
-        page, last = 1, None
-        limit = (max_pages or 999) if full else 2
-        while page <= limit:
-            html = fetch(session, f"{BASE}/show-notices" + (f"?page={page}" if page > 1 else ""))
-            if last is None:
-                nums = [int(n) for n in re.findall(r"show-notices\?page=(\d+)", html)]
-                last = max(nums) if nums else 1
-            got = parse_notices(html)
-            log(f"  notice archive page {page}/{last}: {len(got)} parsed")
+        while page <= last:
+            url = f"{BASE}/show-notices?page={page}"
+            html = fetch(session, url)
+            soup = BeautifulSoup(html, "html.parser")
+            for a in soup.find_all("a", href=True):
+                parsed = urlparse(urljoin(BASE, a["href"]))
+                if parsed.path.rstrip("/") == "/show-notices":
+                    for value in parse_qs(parsed.query).get("page", []):
+                        if value.isdigit():
+                            last = max(last, int(value))
+            if max_pages is not None:
+                last = min(last, max_pages)
+            got = parse_notice_archive(html)
+            if got is None:
+                raise RuntimeError(f"Notice archive table missing on page {page}")
             if not got:
+                if page > 1 or last > 1:
+                    raise RuntimeError(f"Unexpected empty notice archive page {page}/{last}")
+                log("  notice archive is empty")
                 break
-            rows += got
+            signature = tuple((r["code"], r["date"], r["time"]) for r in got)
+            if signature in fingerprints:
+                raise RuntimeError(f"Repeated notice page {page}: pagination may be broken")
+            fingerprints.add(signature)
+            rows.extend(got)
+            log(f"  notice archive page {page}/{last}: {len(got)} parsed")
             page += 1
-            if page > last:
-                break
-            time.sleep(REQUEST_DELAY)
-    except Exception as e:  # noqa: BLE001
-        log(f"  notice archive skipped: {e}")
-
+            if page <= last:
+                time.sleep(REQUEST_DELAY)
+    finally:
+        session.close()
     if rows:
-        merged = pd.concat([load_notices(), pd.DataFrame(rows)], ignore_index=True)
+        # Do not replace valid historical links with missing links from an amended row.
+        existing = load_notices()
+        fresh = pd.DataFrame(rows)
+        merged = fresh if existing.empty else pd.concat([existing, fresh], ignore_index=True)
+        for column in ("pdf_url", "lab_pdf_url", "price_type"):
+            merged[column] = merged[column].replace("", pd.NA)
+            merged[column] = merged.groupby(["code", "date"], dropna=False)[column].ffill()
         merged = merged.drop_duplicates(["code", "date"], keep="last")
         _save(merged, NOTICES_CSV, NOTICE_COLUMNS, ["date", "time"])
-    return len(rows)
-
+    return len({(r["code"], r["date"]) for r in rows})
 
 def update_contracts(full: bool = False, max_fetch: int = 30, log=print) -> int:
     """Fetch the daily trading report for every date that had a sold auction. Returns contracts parsed."""
@@ -682,15 +708,15 @@ def update_contracts(full: bool = False, max_fetch: int = 30, log=print) -> int:
         _save(merged, CONTRACTS_CSV, CONTRACT_COLUMNS, ["date", "product_code"])
     return len(rows)
 
-
 def update_all(full: bool = False, max_pages: int | None = None, log=print) -> dict:
+    errors = []
     n_new = update_trades(full=full, max_pages=max_pages, log=log)
     try:
         n_notices = update_notices(full=full, max_pages=max_pages, log=log)
-    except Exception as e:  # notices are nice-to-have; never fail the whole run
+    except Exception as e:  # report incomplete notices to the scheduler
         log(f"  notices failed: {e}")
         n_notices = 0
-    errors = []
+        errors.append(f"notices: {e}")
     try:
         n_contracts = update_contracts(full=full, log=log)
     except Exception as e:  # keep prices working if the daily reports break, but SAY so
@@ -699,28 +725,31 @@ def update_all(full: bool = False, max_pages: int | None = None, log=print) -> d
         n_contracts = 0
     return {"new_trades": n_new, "notices": n_notices, "contracts": n_contracts, "errors": errors}
 
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--full", action="store_true", help="crawl all pages of history")
     ap.add_argument("--max-pages", type=int, help="limit pages (for testing)")
     ap.add_argument("--debug", action="store_true", help="print flattened text of page 1 and exit")
     ap.add_argument("--debug-contracts", metavar="YYYY-MM-DD", help="print + parse one daily trading report and exit")
+    ap.add_argument("--notices-only", action="store_true", help="update the full notice archive only")
     args = ap.parse_args()
-
+    if args.max_pages is not None and args.max_pages < 1:
+        ap.error("--max-pages must be positive")
+    if args.notices_only:
+        count = update_notices(full=args.full, max_pages=args.max_pages)
+        print(f"Done. {count} notices scraped; {len(load_notices())} saved in {NOTICES_CSV}")
+        return 0
     if args.debug:
         html = fetch(make_session(), f"{BASE}/show-trades")
         print(_flatten(BeautifulSoup(html, "html.parser"))[:4000])
         print("\nparsed:", len(parse_trades(html)), "trades")
         return 0
-
     if args.debug_contracts:
         html = fetch(make_session(), f"{BASE}/show_trading_infos/{args.debug_contracts}")
         print(_flatten(BeautifulSoup(html, "html.parser"))[:3000])
         for r in parse_contracts(html, page_date=args.debug_contracts):
             print({k: r[k] for k in ("product_code", "company_en", "commodity", "grade", "deal_price", "currency", "lots", "quantity_t", "total_value", "bidders")})
         return 0
-
     print("Updating COMEX data ...")
     result = update_all(full=args.full, max_pages=args.max_pages)
     total = len(load_trades())
@@ -729,7 +758,5 @@ def main() -> int:
     for err in result["errors"]:
         print("WARNING:", err)
     return 1 if result["errors"] else 0
-
-
 if __name__ == "__main__":
     sys.exit(main())
