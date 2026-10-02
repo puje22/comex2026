@@ -3,9 +3,10 @@ import sys, threading, tempfile, pathlib, http.server, socketserver
 ROOT = pathlib.Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT/"tests"))
 import scraper, pandas as pd
 from test_parsers import TRADES_HTML, NOTICE_HTML
+from notice_fixture import notice_page
 from test_contracts import D0911, D0910, html_table
 
-PAGES = {"/show-trades": TRADES_HTML, "/home": NOTICE_HTML,
+PAGES = {"/show-trades": TRADES_HTML, "/home": NOTICE_HTML, "/show-notices": notice_page(),
          "/show_trading_infos/2026-09-11": html_table(D0911), "/show_trading_infos/2026-09-10": html_table(D0910)}
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -35,6 +36,7 @@ def run(full):
 res, logs = run(full=True)
 c = scraper.load_contracts()
 assert res["errors"] == [], res["errors"]
+assert res["notices"] == 1 and len(scraper.load_notices()) == 1
 assert len(c) == 8 and sorted(set(c["date"])) == ["2026-09-10", "2026-09-11"], (res, len(c))
 assert c["total_value"].sum() == 16384000 + 19558400*2 + 18496000 + 15803377 + 4480000 + 24678400 + 438900
 tt = c[c["company_en"] == "Tavan Tolgoi JSC"]
@@ -63,3 +65,16 @@ res, _ = run(full=False)
 assert res["errors"] and "boom" in res["errors"][0]
 scraper.update_contracts = orig
 print("errors are surfaced OK")
+
+# Notice failures must also propagate through update_all and main's exit status.
+PAGES.pop("/show-notices")
+before = scraper.NOTICES_CSV.read_bytes()
+res, _ = run(full=False)
+assert any("notices:" in e for e in res["errors"]), res
+assert scraper.NOTICES_CSV.read_bytes() == before
+with contextlib.redirect_stdout(io.StringIO()):
+    sys.argv = ["scraper.py"]
+    rc = scraper.main()
+assert rc == 1, rc
+srv.shutdown(); srv.server_close()
+print("notice failures are surfaced with exit code 1 OK")

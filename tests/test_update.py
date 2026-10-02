@@ -21,7 +21,8 @@ def fake_fetch(session, url, retries=3):
     p = int(url.split("page=")[1]) if "page=" in url else 1
     calls.append(p); return page(SITE[p])
 scraper.fetch = fake_fetch
-scraper.make_session = lambda: None
+from unittest.mock import Mock
+scraper.make_session = lambda: Mock(spec=["close"])
 
 n = scraper.update_trades(full=True, log=lambda *_: None)
 assert n == 15 and calls == [1, 2, 3], (n, calls)
@@ -57,19 +58,51 @@ print("legacy CSV re-normalised OK")
 
 from test_parsers import TRADES_HTML, NOTICE_HTML
 
-# --- notices accumulate across runs; archive failure is non-fatal ---
+# --- archive pagination, accumulation, amendments and failure preservation ---
+from notice_fixture import notice_page
+from urllib.parse import urlparse, parse_qs
+archive_calls = []
+archive_pages = {
+    1: notice_page(last=3),
+    2: notice_page(code="ECM-26-140", page=2, last=3),
+    3: notice_page(code="ERD-10-2026", page=3, last=3),
+}
 def fake_fetch2(session, url, retries=3):
-    if url.endswith("/home"): return NOTICE_HTML
-    raise RuntimeError("archive not reachable")
+    assert urlparse(url).path == "/show-notices", url
+    p = int(parse_qs(urlparse(url).query).get("page", ["1"])[0])
+    archive_calls.append(p)
+    return archive_pages[p]
 scraper.fetch = fake_fetch2
 if scraper.NOTICES_CSV.exists(): scraper.NOTICES_CSV.unlink()
+assert scraper.update_notices(log=lambda *_: None) == 3
+assert archive_calls == [1, 2, 3], archive_calls
+assert len(scraper.load_notices()) == 3
+r = scraper.load_notices().set_index("code").loc["ER-26183"]
+assert r["currency"] == "CNY" and r["start_price"] == 1150
+assert r["pdf_url"].endswith("mn-ER-26183.pdf")
+assert r["lab_pdf_url"].endswith("lab-ER-26183.pdf")
+assert r["price_type"] == "Тогтмол үнэтэй"
+# Preserve history, add a notice, and refresh an older amended record.
+archive_pages[1] = notice_page(code="ER-99999", date="2026-09-19", last=3)
+archive_pages[3] = notice_page(code="ERD-10-2026", quantity=19200, page=3, last=3)
+archive_calls.clear()
 scraper.update_notices(log=lambda *_: None)
-first = len(scraper.load_notices())
-extra = NOTICE_HTML.replace("ER-26183", "ER-99999").replace("2026-09-18", "2026-09-19")
-scraper.fetch = lambda s, url, retries=3: extra if url.endswith("/home") else (_ for _ in ()).throw(RuntimeError("x"))
+assert archive_calls == [1, 2, 3]
+assert len(scraper.load_notices()) == 4
+assert scraper.load_notices().set_index("code").loc["ERD-10-2026", "quantity_t"] == 19200
 scraper.update_notices(log=lambda *_: None)
-assert len(scraper.load_notices()) > first, "notices must accumulate, not be overwritten"
-print("notice accumulation OK:", first, "->", len(scraper.load_notices()))
+assert len(scraper.load_notices()) == 4
+print("notice archive pagination, accumulation, amendment and deduplication OK")
+before = scraper.NOTICES_CSV.read_bytes()
+archive_pages[2] = "<html>broken layout</html>"
+try:
+    scraper.update_notices(log=lambda *_: None)
+except RuntimeError as e:
+    assert "table missing" in str(e), e
+else:
+    raise AssertionError("Incomplete archive scan must raise")
+assert scraper.NOTICES_CSV.read_bytes() == before
+print("notice archive failure preserves existing CSV OK")
 
 # --- parser fallback when a page has no PDF links ---
 no_pdf = NOTICE_HTML.replace('<a href="', '<a data-x="')
