@@ -1,4 +1,6 @@
 trade_id,trade_time,date,company,company_en,company_raw,commodity,commodity_mn,grade,grade_mn,currency,start_price,final_price,change,change_pct,status
+3014,2026-10-22 11:00,2026-10-22,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,Washed semi-soft coking coal,Баяжуулсан сул коксжих нүүрс,USD,,,,,no_bid
+3013,2026-10-22 11:00,2026-10-22,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron concentrate Fe 65%,Fe-65% Төмрийн баяжмал,USD,85.0,88.5,3.5,4.12,sold
 3012,2026-10-21 11:00,2026-10-21,Тавантолгой ХК,Tavan Tolgoi JSC,Тавантолгой ХК,Coal,Нүүрс,"Thermal coal (sub-bituminous, weakly caking)","Эрчим хүчний нүүрс /Саб-битумт, сул барьцалдах нүүрс/",USD,55.0,69.0,14.0,25.45,sold
 3011,2026-10-21 11:00,2026-10-21,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,Medium-volatile coking coal,"Дэгдэмхий бодис дунд, коксжих нүүрс",USD,177.7,177.7,0.0,0.0,sold
 3010,2026-10-21 11:00,2026-10-21,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron ore Fe 52%,Fe-52% Төмрийн хүдэр,USD,65.0,69.5,4.5,6.92,sold
