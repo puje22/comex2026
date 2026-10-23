@@ -1,4 +1,8 @@
 trade_id,trade_time,date,company,company_en,company_raw,commodity,commodity_mn,grade,grade_mn,currency,start_price,final_price,change,change_pct,status
+3019,2026-10-23 14:00,2026-10-23,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,"Thermal coal (bituminous, non-caking)","Эрчим хүчний нүүрс /Битумт, үл барьцалдах нүүрс/",USD,,,,,no_bid
+3018,2026-10-23 11:00,2026-10-23,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,1/3 coking coal,1/3 коксжих нүүрс,USD,,,,,no_bid
+3017,2026-10-23 11:00,2026-10-23,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron ore Fe 52%,Fe-52% Төмрийн хүдэр,USD,65.0,67.5,2.5,3.85,sold
+3016,2026-10-23 10:00,2026-10-23,Энержи Ресурс ХХК,Energy Resources,Энержи Ресурс ХХК,Coal,Нүүрс,Washed coking coal,Баяжуулсан коксжих нүүрс,CNY,1150.0,1245.0,95.0,8.26,sold
 3015,2026-10-22 14:00,2026-10-22,Энержи Ресурс ХХК,Energy Resources,Энержи Ресурс ХХК,Coal,Нүүрс,Washed non-coking-quality coal,Баяжуулсан коксжих чанаргүй нүүрс,CNY,500.0,555.0,55.0,11.0,sold
 3014,2026-10-22 11:00,2026-10-22,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,Washed semi-soft coking coal,Баяжуулсан сул коксжих нүүрс,USD,,,,,no_bid
 3013,2026-10-22 11:00,2026-10-22,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron concentrate Fe 65%,Fe-65% Төмрийн баяжмал,USD,85.0,88.5,3.5,4.12,sold
