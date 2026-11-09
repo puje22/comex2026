@@ -1,4 +1,6 @@
 trade_id,trade_time,date,company,company_en,company_raw,commodity,commodity_mn,grade,grade_mn,currency,start_price,final_price,change,change_pct,status
+3043,2026-11-09 11:00,2026-11-09,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron ore Fe 52%,Fe-52% Төмрийн хүдэр,USD,65.0,69.0,4.0,6.15,sold
+3042,2026-11-09 10:00,2026-11-09,Энержи Ресурс ХХК,Energy Resources,Энержи Ресурс ХХК,Coal,Нүүрс,Washed coking coal,Баяжуулсан коксжих нүүрс,CNY,1150.0,1180.0,30.0,2.61,sold
 3041,2026-11-06 11:00,2026-11-06,Андын Илч ХХК,Андын Илч ХХК,Андын Илч ХХК,Coal,Нүүрс,Чийг багатай хүрэн нүүрс,Чийг багатай хүрэн нүүрс,CNY,180.0,220.0,40.0,22.22,sold
 3040,2026-11-06 11:00,2026-11-06,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron concentrate Fe 65%,Fe-65% Төмрийн баяжмал,USD,85.0,87.5,2.5,2.94,sold
 3039,2026-11-06 10:00,2026-11-06,Энержи Ресурс ХХК,Energy Resources,Энержи Ресурс ХХК,Coal,Нүүрс,Washed coking coal,Баяжуулсан коксжих нүүрс,CNY,1150.0,1190.0,40.0,3.48,sold
