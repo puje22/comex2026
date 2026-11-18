@@ -226,9 +226,9 @@ def parse_notice_archive(html: str) -> list[dict] | None:
             raise ValueError(f"Unexpected notice archive row: {len(cells)} columns")
         values = [_flatten(c) for c in cells]
         when = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?::\d{2})?)", values[4])
-        qty = re.search(rf"({number})\s*(?:багц|lots?|批量)\s*(?:буюу\s+нийт\s*)?/?\s*({number})\s*/?\s*(?:тн|тонн|tons?|tonnes?|吨)", values[5], re.I)
-        wet = re.search(rf"({number})\s*НМТ", values[5], re.I)
-        dry = re.search(rf"({number})\s*ХМТ", values[5], re.I)
+        qty = re.search(rf"({number})\s*(?:багц|lots?|批量)\s*(?:буюу\s+нийт\s*)?/?\s*({number})\s*/?\s*(?:нойтон\s+)?(?:тн|тонн|tons?|tonnes?|吨)", values[5], re.I)
+        wet = re.search(rf"({number})\s*(?:НМТ|нойтон(?:\s+метр)?\s*(?:тн|тонн)?)", values[5], re.I)
+        dry = re.search(rf"({number})\s*(?:ХМТ|хуурай(?:\s+метр)?\s*(?:тн|тонн)?)", values[5], re.I)
         price = re.search(rf"({number})\s*({currency})", values[6], re.I)
         prefix = re.search(rf"({currency})\s*({number})", values[6], re.I) if not price else None
         if not when or not (qty or wet or dry) or not (price or prefix):
@@ -262,7 +262,7 @@ def parse_notice_archive(html: str) -> list[dict] | None:
             "currency": cur, "start_price": _num(amount),
             "lots": int(_notice_quantity_number(qty[1])) if qty else None,
             "quantity_t": tonnes, "quantity_wet_t": wet_t, "quantity_dry_t": dry_t,
-            "quantity_basis": "reported" if qty else ("dry" if dry else "wet"),
+            "quantity_basis": "dry" if dry else ("wet" if wet else "reported"),
             "price_unit": unit[1] if unit else None, "pdf_url": pdf_url,
             "price_type": values[7], "lab_pdf_url": link(9),
         })

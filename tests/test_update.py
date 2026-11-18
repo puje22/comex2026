@@ -82,6 +82,9 @@ h = h.replace("1,150¥", "2,267.43 ам.дол/ХМТ")
 r = scraper.parse_notice_archive(h)[0]
 assert r["lots"] is None and r["quantity_wet_t"] == 3000 and r["quantity_dry_t"] == 2718
 assert r["start_price"] == 2267.43 and r["currency"] == "USD" and r["price_unit"] == "ХМТ"
+h = notice_page().replace("2 Багц/12800тн/", "7 Багц/7000 нойтон тн/")
+r = scraper.parse_notice_archive(h)[0]
+assert (r["lots"], r["quantity_t"], r["quantity_wet_t"], r["quantity_dry_t"], r["quantity_basis"]) == (7, 7000, 7000, None, "wet")
 h = notice_page(code="0").replace("2026-09-18 10:00:00", "2026-09-18 00:00:00").replace("2 Багц/12800тн/", "2 Багц/12800тн/ 14:00")
 r = scraper.parse_notice_archive(h)[0]
 assert r["code"].startswith("archive-") and r["time"] == "14:00"
