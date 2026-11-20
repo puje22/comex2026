@@ -1,4 +1,5 @@
 trade_id,trade_time,date,company,company_en,company_raw,commodity,commodity_mn,grade,grade_mn,currency,start_price,final_price,change,change_pct,status
+3067,2026-11-20 10:00,2026-11-20,Энержи Ресурс ХХК,Energy Resources,Энержи Ресурс ХХК,Coal,Нүүрс,Washed coking coal,Баяжуулсан коксжих нүүрс,CNY,1150.0,1150.0,0.0,0.0,sold
 3066,2026-11-19 11:00,2026-11-19,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron ore Fe 52%,Fe-52% Төмрийн хүдэр,USD,65.0,68.0,3.0,4.62,sold
 3065,2026-11-18 15:00,2026-11-18,Эрдэнэт Үйлдвэр ТӨҮГ,Erdenet Mining Corporation,Эрдэнэт Үйлдвэр ТӨҮГ,Molybdenum,Молибден,Molybdenum concentrate (>=44% Mo),44%-c багагүй молибдены агуулгатай баяжмал,USD,28427.92,33527.92,5100.0,17.94,sold
 3064,2026-11-18 11:00,2026-11-18,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron ore Fe 52%,Fe-52% Төмрийн хүдэр,USD,65.0,68.0,3.0,4.62,sold
