@@ -1,4 +1,9 @@
 trade_id,trade_time,date,company,company_en,company_raw,commodity,commodity_mn,grade,grade_mn,currency,start_price,final_price,change,change_pct,status
+3075,2026-11-23 14:00,2026-11-23,Хангад Эксплорэйшн ХХК,Khangad Exploration,Хангад Эксплорэйшн ХХК,Coal,Нүүрс,Washed medium-ash semi-hard coking coal,"Баяжуулсан дунд зэрэг үнстэй, хагас хатуу коксжих нүүрс",CNY,500.0,530.0,30.0,6.0,sold
+3074,2026-11-23 14:00,2026-11-23,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,"Thermal coal (bituminous, non-caking)","Эрчим хүчний нүүрс /Битумт, үл барьцалдах нүүрс/",USD,65.1,75.3,10.2,15.67,sold
+3073,2026-11-23 11:00,2026-11-23,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,1/3 coking coal,1/3 коксжих нүүрс,USD,97.9,128.9,31.0,31.66,sold
+3072,2026-11-23 11:00,2026-11-23,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron ore Fe 52%,Fe-52% Төмрийн хүдэр,USD,65.0,67.5,2.5,3.85,sold
+3071,2026-11-23 10:00,2026-11-23,Энержи Ресурс ХХК,Energy Resources,Энержи Ресурс ХХК,Coal,Нүүрс,Washed coking coal,Баяжуулсан коксжих нүүрс,CNY,,,,,no_bid
 3070,2026-11-20 15:00,2026-11-20,Эрдэнэт Үйлдвэр ТӨҮГ,Erdenet Mining Corporation,Эрдэнэт Үйлдвэр ТӨҮГ,Molybdenum,Молибден,Molybdenum concentrate (>=44% Mo),44%-c багагүй молибдены агуулгатай баяжмал,USD,28804.65,34254.65,5450.0,18.92,sold
 3069,2026-11-20 14:00,2026-11-20,Эрдэнэт Үйлдвэр ТӨҮГ,Erdenet Mining Corporation,Эрдэнэт Үйлдвэр ТӨҮГ,Copper,Зэс,Copper concentrate (22.35% Cu),22.35%-ийн зэсийн агуулгатай баяжмал,USD,3272.16,3317.16,45.0,1.38,sold
 3068,2026-11-20 11:00,2026-11-20,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Iron ore,Төмөр,Iron ore Fe 52%,Fe-52% Төмрийн хүдэр,USD,65.0,68.0,3.0,4.62,sold
