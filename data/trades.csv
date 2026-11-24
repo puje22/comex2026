@@ -1,4 +1,5 @@
 trade_id,trade_time,date,company,company_en,company_raw,commodity,commodity_mn,grade,grade_mn,currency,start_price,final_price,change,change_pct,status
+3077,2026-11-24 11:00,2026-11-24,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,Medium-volatile coking coal,"Дэгдэмхий бодис дунд, коксжих нүүрс",USD,147.8,165.8,18.0,12.18,sold
 3076,2026-11-23 15:00,2026-11-23,Эрдэнэт Үйлдвэр ТӨҮГ,Erdenet Mining Corporation,Эрдэнэт Үйлдвэр ТӨҮГ,Copper,Зэс,Copper concentrate (22.35% Cu),22.35%-ийн зэсийн агуулгатай баяжмал,USD,3261.94,3341.94,80.0,2.45,sold
 3075,2026-11-23 14:00,2026-11-23,Хангад Эксплорэйшн ХХК,Khangad Exploration,Хангад Эксплорэйшн ХХК,Coal,Нүүрс,Washed medium-ash semi-hard coking coal,"Баяжуулсан дунд зэрэг үнстэй, хагас хатуу коксжих нүүрс",CNY,500.0,530.0,30.0,6.0,sold
 3074,2026-11-23 14:00,2026-11-23,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,"Thermal coal (bituminous, non-caking)","Эрчим хүчний нүүрс /Битумт, үл барьцалдах нүүрс/",USD,65.1,75.3,10.2,15.67,sold
