@@ -1,4 +1,7 @@
 trade_id,trade_time,date,company,company_en,company_raw,commodity,commodity_mn,grade,grade_mn,currency,start_price,final_price,change,change_pct,status
+3086,2026-11-27 11:00,2026-11-27,Монголросцветмет ТӨҮГ,Mongolrostsvetmet (ex-Erdenes Critical Minerals),Монголросцветмет ТӨҮГ /Эрдэнэс критикал минералс ТӨҮГ/,Fluorspar,Жонш,Fluorspar concentrate CaF2 95%,CaF2-95% Хайлуур жоншны баяжмал,USD,320.0,324.0,4.0,1.25,sold
+3085,2026-11-27 11:00,2026-11-27,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,Medium-volatile coking coal,"Дэгдэмхий бодис дунд, коксжих нүүрс",USD,147.8,157.3,9.5,6.43,sold
+3084,2026-11-27 10:00,2026-11-27,Энержи Ресурс ХХК,Energy Resources,Энержи Ресурс ХХК,Coal,Нүүрс,Washed coking coal,Баяжуулсан коксжих нүүрс,CNY,1150.0,1150.0,0.0,0.0,sold
 3083,2026-11-25 15:00,2026-11-25,Эрдэнэт Үйлдвэр ТӨҮГ,Erdenet Mining Corporation,Эрдэнэт Үйлдвэр ТӨҮГ,Copper,Зэс,Copper concentrate (22.35% Cu),22.35%-ийн зэсийн агуулгатай баяжмал,USD,,,,,no_bid
 3082,2026-11-25 14:00,2026-11-25,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,1/3 coking coal,1/3 коксжих нүүрс,USD,77.8,77.8,0.0,0.0,sold
 3081,2026-11-25 11:00,2026-11-25,Эрдэнэс Тавантолгой ХК,Erdenes Tavan Tolgoi,Эрдэнэс Тавантолгой ХК,Coal,Нүүрс,Medium-volatile coking coal,"Дэгдэмхий бодис дунд, коксжих нүүрс",USD,147.8,153.8,6.0,4.06,sold
